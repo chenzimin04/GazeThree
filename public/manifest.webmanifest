@@ -1,0 +1,10 @@
+{
+  "name": "AmbientEcho",
+  "short_name": "AmbientEcho",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050816",
+  "theme_color": "#050816",
+  "description": "面向中文用户的沉浸式 AI 英语陪练。",
+  "icons": []
+}
