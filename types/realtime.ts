@@ -37,23 +37,6 @@ export type RealtimeBootstrapResponse = {
   };
 };
 
-export type GeminiSetupPayload = {
-  model: string;
-  generationConfig: {
-    responseModalities: Array<"AUDIO">;
-    speechConfig: {
-      voiceConfig: {
-        prebuiltVoiceConfig: {
-          voiceName: string;
-        };
-      };
-    };
-  };
-  systemInstruction: {
-    parts: Array<{ text: string }>;
-  };
-};
-
 export type TranscriptRole = "user" | "assistant";
 
 export type TranscriptEvent = {

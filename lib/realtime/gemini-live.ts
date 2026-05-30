@@ -1,6 +1,6 @@
+import { GoogleGenAI, Modality } from "@google/genai";
 import type {
   AssistantState,
-  GeminiSetupPayload,
   LearningPhase,
   RealtimeBootstrapResponse,
 } from "@/types/realtime";
@@ -17,122 +17,58 @@ export type GeminiLiveClientOptions = {
 };
 
 export class GeminiLiveClient {
-  private socket: WebSocket | null = null;
+  private session: Awaited<ReturnType<GoogleGenAI["live"]["connect"]>> | null = null;
   private readonly options: GeminiLiveClientOptions;
+  private readonly ai: GoogleGenAI;
 
   constructor(options: GeminiLiveClientOptions) {
     this.options = options;
+    this.ai = new GoogleGenAI({
+      apiKey: options.bootstrap.apiKey,
+    });
   }
 
-  connect() {
-    if (this.socket && this.socket.readyState <= WebSocket.OPEN) {
+  async connect() {
+    if (this.session) {
       return;
     }
 
-    const url = new URL(this.options.bootstrap.wsUrl);
-    url.searchParams.set("key", this.options.bootstrap.apiKey);
-
-    const socket = new WebSocket(url.toString());
-    this.socket = socket;
-
-    socket.onopen = () => {
-      this.sendSetup();
-      this.options.onOpen?.();
-    };
-
-    socket.onerror = () => {
-      this.options.onError?.(new Error("Gemini Live socket error"));
-    };
-
-    socket.onclose = () => {
-      this.options.onClose?.();
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(String(event.data)) as Record<string, unknown>;
-        this.handleMessage(payload);
-      } catch (error) {
-        this.options.onError?.(
-          error instanceof Error ? error : new Error("Failed to parse Gemini Live message"),
-        );
-      }
-    };
-  }
-
-  disconnect() {
-    this.socket?.close();
-    this.socket = null;
-  }
-
-  updatePhase(phase: LearningPhase, prompt: string) {
-    this.sendJson({
-      clientContent: {
-        turns: [
-          {
-            role: "user",
-            parts: [{ text: `Switch to ${phase}. New instruction context: ${prompt}` }],
-          },
-        ],
-        turnComplete: true,
-      },
-    });
-  }
-
-  interrupt() {
-    this.sendJson({
-      realtimeInput: {
-        activityEnd: {},
-      },
-    });
-  }
-
-  sendText(text: string) {
-    this.sendJson({
-      clientContent: {
-        turns: [
-          {
-            role: "user",
-            parts: [{ text }],
-          },
-        ],
-        turnComplete: true,
-      },
-    });
-  }
-
-  sendJpegFrame(base64Data: string) {
-    this.sendJson({
-      realtimeInput: {
-        mediaChunks: [
-          {
-            mimeType: "image/jpeg",
-            data: base64Data,
-          },
-        ],
-      },
-    });
-  }
-
-  sendAudioChunk(base64Data: string, mimeType: string) {
-    this.sendJson({
-      realtimeInput: {
-        mediaChunks: [
-          {
-            mimeType,
-            data: base64Data,
-          },
-        ],
-      },
-    });
-  }
-
-  private sendSetup() {
-    const payload: { setup: GeminiSetupPayload } = {
-      setup: {
+    try {
+      this.session = await this.ai.live.connect({
         model: this.options.bootstrap.model,
-        generationConfig: {
-          responseModalities: ["AUDIO"],
+        callbacks: {
+          onopen: () => {
+            this.options.onOpen?.();
+          },
+          onclose: (event) => {
+            if (event.reason) {
+              this.options.onError?.(
+                new Error(`Gemini Live closed: ${event.code} ${event.reason}`),
+              );
+            }
+            this.options.onClose?.();
+          },
+          onerror: (event) => {
+            const message =
+              event instanceof ErrorEvent && event.message
+                ? event.message
+                : "Gemini Live socket error";
+            this.options.onError?.(new Error(message));
+          },
+          onmessage: (message) => {
+            try {
+              this.handleMessage(message as unknown as Record<string, unknown>);
+            } catch (error) {
+              this.options.onError?.(
+                error instanceof Error
+                  ? error
+                  : new Error("Failed to parse Gemini Live message"),
+              );
+            }
+          },
+        },
+        config: {
+          responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
@@ -140,22 +76,68 @@ export class GeminiLiveClient {
               },
             },
           },
+          systemInstruction: this.options.bootstrap.prompt,
         },
-        systemInstruction: {
-          parts: [{ text: this.options.bootstrap.prompt }],
-        },
-      },
-    };
-
-    this.sendJson(payload);
+      });
+    } catch (error) {
+      this.options.onError?.(
+        error instanceof Error ? error : new Error("Gemini Live connection failed"),
+      );
+      throw error;
+    }
   }
 
-  private sendJson(payload: unknown) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
+  disconnect() {
+    this.session?.close();
+    this.session = null;
+  }
 
-    this.socket.send(JSON.stringify(payload));
+  updatePhase(phase: LearningPhase, prompt: string) {
+    this.session?.sendClientContent({
+      turns: [
+        {
+          role: "user",
+          parts: [{ text: `Switch to ${phase}. New instruction context: ${prompt}` }],
+        },
+      ],
+      turnComplete: true,
+    });
+  }
+
+  interrupt() {
+    void this.session?.sendRealtimeInput({
+      activityEnd: {},
+    });
+  }
+
+  sendText(text: string) {
+    this.session?.sendClientContent({
+      turns: [
+        {
+          role: "user",
+          parts: [{ text }],
+        },
+      ],
+      turnComplete: true,
+    });
+  }
+
+  sendJpegFrame(base64Data: string) {
+    void this.session?.sendRealtimeInput({
+      media: {
+        data: base64Data,
+        mimeType: "image/jpeg",
+      },
+    });
+  }
+
+  sendAudioChunk(base64Data: string, mimeType: string) {
+    void this.session?.sendRealtimeInput({
+      audio: {
+        data: base64Data,
+        mimeType,
+      },
+    });
   }
 
   private handleMessage(message: Record<string, unknown>) {
