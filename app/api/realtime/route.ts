@@ -11,7 +11,7 @@ const DEFAULT_MODEL =
   process.env.NEXT_PUBLIC_REALTIME_MODEL ?? "models/gemini-2.0-flash-live-001";
 const DEFAULT_WS_URL =
   process.env.GEMINI_LIVE_WS_URL ??
-  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
+  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 const DEFAULT_VOICE = process.env.GEMINI_LIVE_VOICE ?? "Aoede";
 
 function jsonError(message: string, status = 400) {
