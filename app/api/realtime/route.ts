@@ -38,7 +38,10 @@ async function createLiveAuthToken(params: {
 }) {
   const ai = new GoogleGenAI({
     apiKey: params.apiKey,
-    apiVersion: "v1alpha",
+    httpOptions: {
+      apiVersion: "v1alpha",
+      baseUrl: "https://generativelanguage.googleapis.com/",
+    },
   });
 
   const token = await ai.authTokens.create({

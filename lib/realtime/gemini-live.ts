@@ -26,7 +26,10 @@ export class GeminiLiveClient {
     this.options = options;
     this.ai = new GoogleGenAI({
       apiKey: options.bootstrap.authToken,
-      apiVersion: "v1alpha",
+      httpOptions: {
+        apiVersion: "v1alpha",
+        baseUrl: "https://generativelanguage.googleapis.com/",
+      },
     });
   }
 
