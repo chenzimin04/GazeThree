@@ -3,9 +3,9 @@
   "appName": "GazeThree",
   "webDir": "www",
   "server": {
-    "url": "https://gaze-three.vercel.app/call",
+    "url": "https://gaze-three-eight.vercel.app/call",
     "cleartext": false,
-    "allowNavigation": ["gaze-three.vercel.app"]
+    "allowNavigation": ["gaze-three-eight.vercel.app"]
   },
   "android": {
     "allowMixedContent": false
