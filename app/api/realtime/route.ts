@@ -1,22 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { getPhaseConfig, isLearningPhase, type LearningPhase } from "@/lib/realtime/phases";
 import type {
   RealtimeBootstrapRequest,
   RealtimeBootstrapResponse,
 } from "@/types/realtime";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 const DEFAULT_MODEL = (() => {
   const configured = process.env.NEXT_PUBLIC_REALTIME_MODEL?.trim();
-  if (!configured || configured === "models/gemini-2.0-flash-live-001") {
-    return "gemini-live-2.5-flash-preview";
+  if (
+    !configured ||
+    configured === "models/gemini-2.0-flash-live-001" ||
+    configured === "gemini-2.0-flash-live-001" ||
+    configured === "gemini-live-2.5-flash-preview"
+  ) {
+    return "gemini-3.1-flash-live-preview";
   }
   return configured;
 })();
-const DEFAULT_WS_URL =
-  process.env.GEMINI_LIVE_WS_URL ??
-  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 const DEFAULT_VOICE = process.env.GEMINI_LIVE_VOICE ?? "Aoede";
 
 function jsonError(message: string, status = 400) {
@@ -25,6 +28,45 @@ function jsonError(message: string, status = 400) {
 
 function generateSessionId() {
   return crypto.randomUUID();
+}
+
+async function createLiveAuthToken(params: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  voiceName: string;
+}) {
+  const ai = new GoogleGenAI({
+    apiKey: params.apiKey,
+    apiVersion: "v1alpha",
+  });
+
+  const token = await ai.authTokens.create({
+    config: {
+      newSessionExpireTime: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      uses: 1,
+      liveConnectConstraints: {
+        model: params.model,
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: params.voiceName,
+              },
+            },
+          },
+          systemInstruction: params.prompt,
+        },
+      },
+    },
+  });
+
+  if (!token.name) {
+    throw new Error("Live auth token creation returned an empty token name");
+  }
+
+  return token.name;
 }
 
 export async function POST(request: NextRequest) {
@@ -51,12 +93,24 @@ export async function POST(request: NextRequest) {
 
   const sessionId = generateSessionId();
   const phaseConfig = getPhaseConfig(phase);
+  let authToken: string;
+
+  try {
+    authToken = await createLiveAuthToken({
+      apiKey,
+      model: DEFAULT_MODEL,
+      prompt: phaseConfig.systemPrompt,
+      voiceName: DEFAULT_VOICE,
+    });
+  } catch (error) {
+    console.error("Failed to create Gemini Live auth token", error);
+    return jsonError("Failed to create Gemini Live auth token", 500);
+  }
 
   const response: RealtimeBootstrapResponse = {
     sessionId,
     model: DEFAULT_MODEL,
-    wsUrl: DEFAULT_WS_URL,
-    apiKey,
+    authToken,
     phase,
     prompt: phaseConfig.systemPrompt,
     voiceName: DEFAULT_VOICE,

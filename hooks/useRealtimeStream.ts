@@ -29,6 +29,7 @@ type UseRealtimeStreamResult = {
   isMuted: boolean;
   isCameraEnabled: boolean;
   isAiSpeaking: boolean;
+  debugInfo: string[];
   localStream: MediaStream | null;
   remoteAudioRef: React.RefObject<HTMLAudioElement | null>;
   startSession: () => Promise<void>;
@@ -130,6 +131,7 @@ export function useRealtimeStream(
   const [isCameraEnabled, setIsCameraEnabled] = useState(enableVideo);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -142,13 +144,19 @@ export function useRealtimeStream(
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const outputQueueRef = useRef<Promise<void>>(Promise.resolve());
 
+  const pushDebug = useCallback((line: string) => {
+    const timestamp = new Date().toISOString().split("T")[1]?.replace("Z", "") ?? "time";
+    setDebugInfo((prev) => [...prev.slice(-11), `${timestamp} ${line}`]);
+  }, []);
+
   const emitError = useCallback(
     (cause: unknown) => {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       setStatus("error");
+      pushDebug(`error:${error.message}`);
       onError?.(error);
     },
-    [onError],
+    [onError, pushDebug],
   );
 
   const playPcmChunk = useCallback(async (bytes: Uint8Array) => {
@@ -298,6 +306,11 @@ export function useRealtimeStream(
 
   const bootstrapSession = useCallback(async (): Promise<RealtimeBootstrapResponse> => {
     setStatus("bootstrapping");
+    pushDebug(
+      `bootstrap:start phase=${phase} wantsVideo=${String(
+        isCameraEnabled && sessionMode === "foreground",
+      )} wantsAudio=${String(enableAudio)}`,
+    );
 
     const response = await fetch("/api/realtime", {
       method: "POST",
@@ -311,35 +324,48 @@ export function useRealtimeStream(
 
     if (!response.ok) {
       const text = await response.text();
+      pushDebug(`bootstrap:failed status=${response.status} body=${text}`);
       throw new Error(text || `Bootstrap failed: ${response.status}`);
     }
 
-    return response.json() as Promise<RealtimeBootstrapResponse>;
-  }, [enableAudio, isCameraEnabled, phase, sessionMode]);
+    const bootstrap = (await response.json()) as RealtimeBootstrapResponse;
+    pushDebug(`bootstrap:ok model=${bootstrap.model} voice=${bootstrap.voiceName}`);
+    return bootstrap;
+  }, [enableAudio, isCameraEnabled, phase, pushDebug, sessionMode]);
 
   const startSession = useCallback(async () => {
     try {
+      setDebugInfo([]);
+      pushDebug("session:start");
       const stream = await getLocalMedia();
+      pushDebug(
+        `media:ok audioTracks=${stream.getAudioTracks().length} videoTracks=${stream.getVideoTracks().length}`,
+      );
       const bootstrap = await bootstrapSession();
 
       setStatus("connecting");
+      pushDebug("session:connecting");
 
       const client = new GeminiLiveClient({
         bootstrap,
         phase,
         onOpen: () => {
           setStatus("connected");
+          pushDebug("session:connected");
           onAiStateChange?.("listening");
           startMicrophoneStreaming(stream, bootstrap.inputAudioMimeType || DEFAULT_AUDIO_MIME);
           pumpVideoFrames();
         },
         onClose: () => {
           setStatus("ended");
+          pushDebug("session:closed");
           setIsAiSpeaking(false);
         },
         onError: emitError,
+        onDebugEvent: pushDebug,
         onStateChange: (state) => {
           setIsAiSpeaking(state === "speaking");
+          pushDebug(`assistant:${state}`);
           onAiStateChange?.(state);
         },
         onTranscript,
@@ -349,7 +375,7 @@ export function useRealtimeStream(
       });
 
       clientRef.current = client;
-      client.connect();
+      await client.connect();
     } catch (error) {
       emitError(error);
     }
@@ -463,5 +489,6 @@ export function useRealtimeStream(
     setPhase,
     interruptAi,
     sendText,
+    debugInfo,
   };
 }

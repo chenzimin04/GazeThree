@@ -22,8 +22,7 @@ export type RealtimeBootstrapRequest = {
 export type RealtimeBootstrapResponse = {
   sessionId: string;
   model: string;
-  wsUrl: string;
-  apiKey: string;
+  authToken: string;
   phase: LearningPhase;
   prompt: string;
   voiceName: string;

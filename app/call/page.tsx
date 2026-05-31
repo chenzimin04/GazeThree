@@ -30,6 +30,7 @@ export default function CallPage() {
     isMuted,
     isCameraEnabled,
     isAiSpeaking,
+    debugInfo,
     localStream,
     remoteAudioRef,
     startSession,
@@ -182,8 +183,18 @@ export default function CallPage() {
       </div>
 
       {errorMessage ? (
-        <div className="absolute left-4 right-4 top-24 z-20 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100 backdrop-blur-md sm:left-6 sm:right-auto sm:max-w-md">
-          {errorMessage}
+        <div className="absolute left-4 right-4 top-24 z-20 space-y-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100 backdrop-blur-md sm:left-6 sm:right-auto sm:max-w-md">
+          <div className="font-medium">{errorMessage}</div>
+          {debugInfo.length ? (
+            <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+              <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-rose-100/70">
+                Connection Diagnostics
+              </div>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-rose-50/90">
+                {debugInfo.join("\n")}
+              </pre>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </main>

@@ -11,6 +11,7 @@ export type GeminiLiveClientOptions = {
   onOpen?: () => void;
   onClose?: () => void;
   onError?: (error: Error) => void;
+  onDebugEvent?: (event: string) => void;
   onStateChange?: (state: AssistantState) => void;
   onTranscript?: (text: string, role: "user" | "assistant") => void;
   onAudioChunk?: (bytes: Uint8Array, mimeType: string) => void;
@@ -24,7 +25,8 @@ export class GeminiLiveClient {
   constructor(options: GeminiLiveClientOptions) {
     this.options = options;
     this.ai = new GoogleGenAI({
-      apiKey: options.bootstrap.apiKey,
+      apiKey: options.bootstrap.authToken,
+      apiVersion: "v1alpha",
     });
   }
 
@@ -34,25 +36,37 @@ export class GeminiLiveClient {
     }
 
     try {
+      this.options.onDebugEvent?.(
+        `connect:start model=${this.options.bootstrap.model} phase=${this.options.phase}`,
+      );
       this.session = await this.ai.live.connect({
         model: this.options.bootstrap.model,
         callbacks: {
           onopen: () => {
+            this.options.onDebugEvent?.("socket:onopen");
             this.options.onOpen?.();
           },
           onclose: (event) => {
-            if (event.reason) {
+            this.options.onDebugEvent?.(
+              `socket:onclose code=${event.code} reason=${event.reason || "none"}`,
+            );
+            if (event.code !== 1000) {
               this.options.onError?.(
-                new Error(`Gemini Live closed: ${event.code} ${event.reason}`),
+                new Error(
+                  `Gemini Live closed: code=${event.code} reason=${event.reason || "none"}`,
+                ),
               );
             }
             this.options.onClose?.();
           },
           onerror: (event) => {
             const message =
-              event instanceof ErrorEvent && event.message
-                ? event.message
+              event instanceof ErrorEvent
+                ? event.message ||
+                  (event.error instanceof Error ? event.error.message : "") ||
+                  "Gemini Live socket error"
                 : "Gemini Live socket error";
+            this.options.onDebugEvent?.(`socket:onerror message=${message}`);
             this.options.onError?.(new Error(message));
           },
           onmessage: (message) => {
@@ -69,17 +83,15 @@ export class GeminiLiveClient {
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: this.options.bootstrap.voiceName,
-              },
-            },
-          },
-          systemInstruction: this.options.bootstrap.prompt,
         },
       });
+      this.options.onDebugEvent?.("connect:resolved");
     } catch (error) {
+      this.options.onDebugEvent?.(
+        `connect:catch ${
+          error instanceof Error ? error.message : "Gemini Live connection failed"
+        }`,
+      );
       this.options.onError?.(
         error instanceof Error ? error : new Error("Gemini Live connection failed"),
       );
@@ -141,6 +153,19 @@ export class GeminiLiveClient {
   }
 
   private handleMessage(message: Record<string, unknown>) {
+    if ("setupComplete" in message) {
+      this.options.onDebugEvent?.("message:setupComplete");
+    }
+
+    if ("goAway" in message) {
+      const goAway = message.goAway as Record<string, unknown> | undefined;
+      this.options.onDebugEvent?.(`message:goAway ${JSON.stringify(goAway ?? {})}`);
+    }
+
+    if ("sessionResumptionUpdate" in message) {
+      this.options.onDebugEvent?.("message:sessionResumptionUpdate");
+    }
+
     if ("serverContent" in message) {
       const serverContent = message.serverContent as Record<string, unknown>;
 
@@ -153,6 +178,7 @@ export class GeminiLiveClient {
         | undefined;
 
       if (modelTurn?.parts?.length) {
+        this.options.onDebugEvent?.(`message:modelTurn parts=${modelTurn.parts.length}`);
         this.options.onStateChange?.("speaking");
       }
 
@@ -181,6 +207,7 @@ export class GeminiLiveClient {
     }
 
     if ("usageMetadata" in message) {
+      this.options.onDebugEvent?.("message:usageMetadata");
       this.options.onStateChange?.("thinking");
     }
   }
