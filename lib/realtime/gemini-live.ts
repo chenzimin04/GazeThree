@@ -139,7 +139,7 @@ export class GeminiLiveClient {
 
   sendJpegFrame(base64Data: string) {
     void this.session?.sendRealtimeInput({
-      media: {
+      video: {
         data: base64Data,
         mimeType: "image/jpeg",
       },
