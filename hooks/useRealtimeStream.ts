@@ -135,6 +135,7 @@ export function useRealtimeStream(
 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameTimerRef = useRef<number | null>(null);
   const clientRef = useRef<GeminiLiveClient | null>(null);
@@ -143,6 +144,7 @@ export function useRealtimeStream(
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const outputQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const isMutedRef = useRef(false);
 
   const pushDebug = useCallback((line: string) => {
     const timestamp = new Date().toISOString().split("T")[1]?.replace("Z", "") ?? "time";
@@ -245,7 +247,7 @@ export function useRealtimeStream(
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
     processor.onaudioprocess = (event) => {
-      if (!clientRef.current || isMuted) {
+      if (!clientRef.current || isMutedRef.current) {
         return;
       }
 
@@ -271,7 +273,7 @@ export function useRealtimeStream(
     audioContextRef.current = audioContext;
     audioSourceRef.current = source;
     audioProcessorRef.current = processor;
-  }, [isMuted]);
+  }, []);
 
   const stopMicrophoneStreaming = useCallback(() => {
     audioProcessorRef.current?.disconnect();
@@ -298,6 +300,7 @@ export function useRealtimeStream(
       enableVideo,
       isCameraEnabled,
     );
+    localStreamRef.current = stream;
     setLocalStream(stream);
     setIsCameraEnabled(stream.getVideoTracks().length > 0);
     attachLocalPreview(stream);
@@ -395,18 +398,19 @@ export function useRealtimeStream(
     stopFramePump();
     stopMicrophoneStreaming();
     clientRef.current?.disconnect();
-    localStream?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localVideoRef.current?.pause();
     outputAudioContextRef.current?.close().catch(() => undefined);
 
     clientRef.current = null;
     localVideoRef.current = null;
+    localStreamRef.current = null;
     outputAudioContextRef.current = null;
     outputQueueRef.current = Promise.resolve();
     setLocalStream(null);
     setStatus("ended");
     setIsAiSpeaking(false);
-  }, [localStream, stopFramePump, stopMicrophoneStreaming]);
+  }, [stopFramePump, stopMicrophoneStreaming]);
 
   const toggleMute = useCallback(() => {
     if (!localStream) {
@@ -417,6 +421,7 @@ export function useRealtimeStream(
     localStream.getAudioTracks().forEach((track) => {
       track.enabled = !nextMuted;
     });
+    isMutedRef.current = nextMuted;
     setIsMuted(nextMuted);
   }, [isMuted, localStream]);
 
@@ -456,6 +461,14 @@ export function useRealtimeStream(
   }, []);
 
   useEffect(() => {
+    localStreamRef.current = localStream;
+  }, [localStream]);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  useEffect(() => {
     const handleVisibility = () => {
       const hidden = document.visibilityState === "hidden";
       const nextMode: SessionMode = hidden ? "background-audio" : "foreground";
@@ -471,8 +484,6 @@ export function useRealtimeStream(
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, [isCameraEnabled, pumpVideoFrames, stopFramePump]);
-
-  useEffect(() => () => endSession(), [endSession]);
 
   return {
     status,

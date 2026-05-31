@@ -23,6 +23,8 @@ export default function CallPage() {
   const [transcript, setTranscript] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const backgroundVideoRef = useRef<HTMLVideoElement | null>(null);
+  const startSessionRef = useRef<(() => Promise<void>) | null>(null);
+  const endSessionRef = useRef<(() => void) | null>(null);
 
   const {
     status,
@@ -55,9 +57,14 @@ export default function CallPage() {
   });
 
   useEffect(() => {
-    void startSession();
-    return () => endSession();
+    startSessionRef.current = startSession;
+    endSessionRef.current = endSession;
   }, [startSession, endSession]);
+
+  useEffect(() => {
+    void startSessionRef.current?.();
+    return () => endSessionRef.current?.();
+  }, []);
 
   useEffect(() => {
     if (!backgroundVideoRef.current || !localStream) {
