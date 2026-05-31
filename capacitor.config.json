@@ -1,0 +1,13 @@
+{
+  "appId": "com.ambientecho.app",
+  "appName": "GazeThree",
+  "webDir": "www",
+  "server": {
+    "url": "https://gaze-three.vercel.app/call",
+    "cleartext": false,
+    "allowNavigation": ["gaze-three.vercel.app"]
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

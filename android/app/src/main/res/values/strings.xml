@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">AmbientEcho</string>
-    <string name="title_activity_main">AmbientEcho</string>
+    <string name="app_name">GazeThree</string>
+    <string name="title_activity_main">GazeThree</string>
     <string name="package_name">com.ambientecho.app</string>
     <string name="custom_url_scheme">com.ambientecho.app</string>
 </resources>
